@@ -1,0 +1,18 @@
+const router = require('express').Router();
+const controller = require('../controllers/authController');
+const validate = require('../middleware/validate');
+const schemas = require('../validation/schemas');
+const { requireAuth } = require('../middleware/auth');
+router.post('/register', validate(schemas.register), controller.register);
+router.post('/login', validate(schemas.login), controller.login);
+router.post('/verify-email', validate(schemas.verifyEmail), controller.verifyEmail);
+router.post('/resend-verification', validate(schemas.forgotPassword), controller.resendVerification);
+router.post('/forgot-password', validate(schemas.forgotPassword), controller.requestPasswordReset);
+router.post('/reset-password', validate(schemas.resetPassword), controller.resetPassword);
+router.get('/me', requireAuth, controller.me);
+router.patch('/me', requireAuth, validate(schemas.profile), controller.updateMe);
+router.get('/preferences', requireAuth, controller.getPreferences);
+router.patch('/preferences', requireAuth, validate(schemas.preferences), controller.updatePreferences);
+router.delete('/me', requireAuth, controller.deleteAccount);
+router.post('/logout', requireAuth, controller.logout);
+module.exports = router;

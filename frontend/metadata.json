@@ -1,0 +1,6 @@
+{
+  "name": "Adaptive AI Workspace",
+  "description": "A calm, circadian-anchored adaptive work environment with intelligent ambient automation and focus pacing.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

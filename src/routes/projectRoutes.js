@@ -1,0 +1,11 @@
+const router = require('express').Router();
+const controller = require('../controllers/projectController');
+const validate = require('../middleware/validate');
+const schemas = require('../validation/schemas');
+router.get('/', controller.list);
+router.post('/', validate(schemas.project), controller.create);
+router.get('/:id', validate(schemas.paramsId, 'params'), controller.get);
+router.put('/:id', validate(schemas.paramsId, 'params'), validate(schemas.project.partial(), 'body'), controller.update);
+router.patch('/:id', validate(schemas.paramsId, 'params'), validate(schemas.project.partial(), 'body'), controller.update);
+router.delete('/:id', validate(schemas.paramsId, 'params'), controller.remove);
+module.exports = router;
