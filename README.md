@@ -1,51 +1,82 @@
-# Adaptive AI Workspace Backend
+# Adaptive AI Workspace
 
-Node.js/Express backend foundation with MongoDB/Mongoose persistence, JWT + bcrypt authentication, Zod request validation, and user-scoped Project and Task CRUD APIs.
+An authenticated, privacy-first adaptive workspace that combines productivity tools, grounded AI assistance, real-time webcam analysis, focus analytics, and personalized workspace automation.
 
-## Setup
+## Features
 
-```bash
-npm install
-copy .env.example .env
-# Start MongoDB, then:
-npm start
-```
+- User registration with email verification
+- Secure login using HTTP-only cookies
+- Password reset by email verification code
+- Profile editing and account deletion
+- MongoDB Atlas/MongoDB persistence
+- Projects and task management
+- Document upload and text extraction
+- Grounded AI/RAG chat over workspace documents and tasks
+- Focus sessions with analytics
+- Persistent workspace preferences
+- Automation rules for lighting and audio
+- Browser-only webcam analysis:
+  - Lighting analysis
+  - Posture alignment estimation
+  - Fatigue estimation
+  - MediaPipe pose landmarks
+- Privacy-first camera processing
+- Responsive React interface
+- Production deployment configuration for Render and Vercel
 
-Set a strong `JWT_SECRET` in production. The server defaults to port 3000.
+## Technology Stack
 
-## API
+### Backend
 
-- `GET /health`
-- `POST /api/auth/register` (`name`, `email`, `password`)
-- `POST /api/auth/login` (`email`, `password`)
-- `GET /api/auth/me`
-- `PATCH /api/auth/me` (`name` and/or `email`)
-- `POST /api/auth/logout` (revokes the current token in this process)
-- Authenticated with `Authorization: Bearer <token>`:
-  - `GET|POST /api/projects`
-  - `GET|PUT|PATCH|DELETE /api/projects/:id`
-  - `GET|POST /api/tasks`
-  - `GET|PUT|PATCH|DELETE /api/tasks/:id`
-  - `POST /api/documents` (multipart field `file`, optional `projectId`)
-  - `GET|DELETE /api/documents/:id` and `GET /api/documents`
-  - `POST /api/ai/chat` (`{ "message": "..." }`) for authenticated, grounded workspace chat
+- Node.js
+- Express
+- MongoDB
+- Mongoose
+- JWT
+- HTTP-only cookies
+- bcrypt
+- Zod validation
+- Nodemailer
+- Multer
+- PDF and DOCX extraction
+- Helmet
+- CORS
+- Rate limiting
 
-Projects support `status`, `priority`, and `search` query filters. Tasks support `projectId`, `status`, `priority`, and `deadline` query filters. Success responses use `{ success: true, data }`; errors use `{ success: false, error: { code, message } }` (validation errors may also include `error.details`). Logout uses an in-memory token denylist, so revoked tokens remain invalid until expiry within the running process.
+### Frontend
 
-AI chat uses deterministic local retrieval over the user's documents, pending tasks,
-and active projects. Configure both `AI_API_KEY` and `AI_API_URL` to enable an
-optional provider; without them, responses remain local and explicitly say when
-context is unavailable. See `docs/RAG_ARCHITECTURE.md`.
+- React
+- TypeScript
+- Vite
+- Tailwind CSS
+- Recharts
+- Lucide React
+- MediaPipe Tasks Vision
 
-Adaptive Vision is an opt-in browser-only webcam experience. It never uploads
-camera frames. Posture alignment and fatigue are on-device, heuristic estimates
-from pose landmarks, stillness, and session duration—not medical assessments.
-If camera permission or the model is unavailable, lighting analysis and the rest
-of the workspace remain usable. See `docs/PRIVACY_SECURITY.md` for the privacy boundary.
+## Project Structure
 
-## Validation
-
-```bash
-npm test
-npm run check
-```
+```text
+.
+├── src/
+│   ├── ai/                    # Retrieval and AI chat services
+│   ├── config/                # Environment and database configuration
+│   ├── controllers/           # HTTP request controllers
+│   ├── middleware/            # Authentication, validation, errors, uploads
+│   ├── models/                # Mongoose models
+│   ├── routes/                # API routes
+│   ├── services/              # Business logic
+│   ├── utils/                 # Shared utilities
+│   ├── app.js                 # Express application
+│   └── server.js              # Server startup
+├── frontend/
+│   ├── src/
+│   │   ├── components/        # Shared UI components
+│   │   ├── context/           # Authentication and workspace state
+│   │   ├── services/          # Frontend API client
+│   │   ├── views/             # Application screens
+│   │   └── utils/             # Browser utilities
+│   └── package.json
+├── docs/
+├── Dockerfile
+├── render.yaml
+└── .env.example
