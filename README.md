@@ -1,6 +1,5 @@
 # Adaptive AI Workspace
-
-An authenticated, privacy-first adaptive workspace that combines productivity tools, grounded AI assistance, real-time webcam analysis, focus analytics, and personalized workspace automation.
+An AI workspace that watches your posture and fatigue through your webcam and automatically adjusts lighting, tasks, and focus timers to match your energy through the day.'
 
 ## Features
 
