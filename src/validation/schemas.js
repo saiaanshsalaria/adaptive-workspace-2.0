@@ -50,8 +50,17 @@ const focusSession = z.object({
   startedAt: z.coerce.date(),
   endedAt: z.coerce.date()
 }).strict();
+const visionSession = z.object({
+  durationSeconds: z.number().int().min(1).max(24 * 60 * 60),
+  sampleCount: z.number().int().min(1).max(100000),
+  averageLighting: z.number().min(0).max(100).optional(),
+  averagePosture: z.number().min(0).max(100).optional(),
+  lowConfidenceSeconds: z.number().min(0).max(24 * 60 * 60).default(0),
+  breakSuggested: z.boolean().default(false),
+  modelVersion: z.string().trim().min(1).max(64)
+}).strict();
 const analyticsQuery = z.object({
   days: z.coerce.number().int().min(1).max(31).default(7)
 });
 
-module.exports = { id, paramsId, register, login, verifyEmail, forgotPassword, resetPassword, profile, preferences, project, task, taskUpdate, filters, documentUpload, chat, focusSession, analyticsQuery };
+module.exports = { id, paramsId, register, login, verifyEmail, forgotPassword, resetPassword, profile, preferences, project, task, taskUpdate, filters, documentUpload, chat, focusSession, visionSession, analyticsQuery };

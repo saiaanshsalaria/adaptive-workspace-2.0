@@ -35,6 +35,16 @@ export interface FocusAnalytics {
   daily: Array<{ date: string; seconds: number }>;
 }
 
+export interface VisionSessionSummary {
+  durationSeconds: number;
+  sampleCount: number;
+  averageLighting?: number;
+  averagePosture?: number;
+  lowConfidenceSeconds?: number;
+  breakSuggested?: boolean;
+  modelVersion: string;
+}
+
 interface ApiEnvelope<T> {
   success: boolean;
   data: T;
@@ -119,7 +129,10 @@ export const api = {
   deleteAccount: () => request<{ deleted: boolean }>('/api/auth/me', { method: 'DELETE' }),
   createFocusSession: (session: { durationSeconds: number; completed: boolean; startedAt: string; endedAt: string }) =>
     request<unknown>('/api/focus/sessions', { method: 'POST', body: JSON.stringify(session) }),
-  getFocusAnalytics: () => request<FocusAnalytics>('/api/focus/analytics?days=7')
+  getFocusAnalytics: () => request<FocusAnalytics>('/api/focus/analytics?days=7'),
+  createVisionSession: (session: VisionSessionSummary) =>
+    request<unknown>('/api/vision/sessions', { method: 'POST', body: JSON.stringify(session) }),
+  getVisionAnalytics: () => request<{ days: number; totalSeconds: number; sessions: VisionSessionSummary[] }>('/api/vision/analytics?days=7')
 };
 
 export function normalizeTask(value: any): TaskItem {
