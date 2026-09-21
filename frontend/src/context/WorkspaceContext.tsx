@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect, useRef, ReactNode } from 'react';
+import React, { createContext, useContext, useState, useEffect, useRef, useCallback, ReactNode } from 'react';
 import { ViewMode, TaskItem, IndexedDocument, ChatMessage, AutomationRule, RoomEnvironmentState } from '../types';
 import { startAmbientSound, stopAmbientSound, updateAmbientVolume } from '../utils/audio';
 import { useAuth } from './AuthContext';
@@ -20,6 +20,15 @@ interface WorkspaceContextType {
   setDeskLamp: (updates: Partial<RoomEnvironmentState['deskLamp']>) => void;
   setFocusAudio: (updates: Partial<RoomEnvironmentState['focusAudio']>) => void;
   setScreenWarmth: (updates: Partial<RoomEnvironmentState['screenWarmth']>) => void;
+  adaptiveEnvironment: {
+    active: boolean;
+    lastUpdated: number | null;
+    summary: string;
+    deskController: { level: number; status: string };
+    roomLighting: { brightness: number; colorTemp: number; status: string };
+    airConditioning: { temperature: number; fan: number; status: string };
+  };
+  applyAdaptiveSignals: (signals: { lighting: number; posture: number | null; fatigue: number | null }) => void;
   soundscapeActive: boolean;
   toggleSoundscape: () => void;
   tasks: TaskItem[];
@@ -232,6 +241,15 @@ export const WorkspaceProvider: React.FC<{ children: ReactNode }> = ({ children 
       status: 'Pristine'
     }
   });
+  const [adaptiveEnvironment, setAdaptiveEnvironment] = useState<WorkspaceContextType['adaptiveEnvironment']>({
+    active: false,
+    lastUpdated: null,
+    summary: 'Start Adaptive Vision to connect camera signals to the simulated environment.',
+    deskController: { level: 60, status: 'Standby' },
+    roomLighting: { brightness: 70, colorTemp: 3400, status: 'Balanced' },
+    airConditioning: { temperature: 24, fan: 35, status: 'Comfort' }
+  });
+  const lastAdaptiveUpdate = useRef(0);
 
   const [tasks, setTasks] = useState<TaskItem[]>(INITIAL_TASKS);
   const [documents, setDocuments] = useState<IndexedDocument[]>(INITIAL_DOCS);
@@ -417,6 +435,66 @@ export const WorkspaceProvider: React.FC<{ children: ReactNode }> = ({ children 
       screenWarmth: { ...env.screenWarmth, ...updates }
     }));
   };
+
+  const applyAdaptiveSignals = useCallback((signals: { lighting: number; posture: number | null; fatigue: number | null }) => {
+    const now = Date.now();
+    if (now - lastAdaptiveUpdate.current < 2500) return;
+    lastAdaptiveUpdate.current = now;
+    const lighting = Math.max(0, Math.min(100, signals.lighting));
+    const fatigue = signals.fatigue ?? 0;
+    const posture = signals.posture ?? 80;
+    const targetBrightness = Math.round(Math.max(45, Math.min(92, 58 + (100 - lighting) * 0.28 + fatigue * 0.08)));
+    const targetTemp = Math.round(Math.max(2700, Math.min(4200, 3600 - fatigue * 7 - (100 - lighting) * 3)));
+    const targetVolume = Math.round(Math.max(18, Math.min(42, 34 - fatigue * 0.12)));
+    const targetRoomBrightness = Math.round(Math.max(35, Math.min(100, 48 + lighting * 0.48)));
+    const targetRoomTemp = Math.round(Math.max(2700, Math.min(4800, 3000 + lighting * 12 - fatigue * 5)));
+    const targetDeskLevel = Math.round(Math.max(35, Math.min(90, 62 + fatigue * 0.15 + (100 - posture) * 0.12)));
+    const targetAcTemperature = Math.round(Math.max(22, Math.min(25, 24 + (fatigue > 70 ? -1 : 0))));
+    const targetAcFan = Math.round(Math.max(25, Math.min(75, 30 + fatigue * 0.35)));
+    setEnvironment((current) => {
+      const nextBrightness = Math.round(current.deskLamp.brightness + (targetBrightness - current.deskLamp.brightness) * 0.2);
+      const nextTemp = Math.round(current.screenWarmth.currentTempK + (targetTemp - current.screenWarmth.currentTempK) * 0.2);
+      const nextVolume = Math.round(current.focusAudio.volume + (targetVolume - current.focusAudio.volume) * 0.2);
+      return {
+        ...current,
+        deskLamp: { ...current.deskLamp, enabled: true, brightness: nextBrightness, colorTemp: nextTemp },
+        focusAudio: { ...current.focusAudio, volume: nextVolume },
+        screenWarmth: {
+          ...current.screenWarmth,
+          autoTrueTone: true,
+          currentTempK: nextTemp,
+          targetDescription: fatigue > 65
+            ? 'Gradually warming for a gentler recovery rhythm'
+            : posture < 70
+              ? 'Holding a steady, low-distraction environment'
+              : 'Balanced for the current workspace signals'
+        }
+      };
+    });
+    setAdaptiveEnvironment({
+      active: true,
+      lastUpdated: now,
+      summary: fatigue > 65
+        ? 'Sustained fatigue detected — warmth and sound are easing gradually.'
+        : posture < 70
+          ? 'Posture signal changed — the environment is holding steady for refocusing.'
+          : 'Signals are balanced — the environment is adapting gently.',
+      deskController: {
+        level: targetDeskLevel,
+        status: fatigue > 65 ? 'Raising gently' : posture < 70 ? 'Posture support' : 'Ready'
+      },
+      roomLighting: {
+        brightness: targetRoomBrightness,
+        colorTemp: targetRoomTemp,
+        status: lighting < 45 ? 'Brightening gradually' : fatigue > 65 ? 'Warming gradually' : 'Balanced'
+      },
+      airConditioning: {
+        temperature: targetAcTemperature,
+        fan: targetAcFan,
+        status: fatigue > 70 ? 'Cooling gently' : 'Comfort'
+      }
+    });
+  }, []);
 
   const toggleSoundscape = () => {
     setSoundscapeActive((prev) => {
@@ -664,6 +742,8 @@ export const WorkspaceProvider: React.FC<{ children: ReactNode }> = ({ children 
         setDeskLamp,
         setFocusAudio,
         setScreenWarmth,
+        adaptiveEnvironment,
+        applyAdaptiveSignals,
         soundscapeActive,
         toggleSoundscape,
         tasks,

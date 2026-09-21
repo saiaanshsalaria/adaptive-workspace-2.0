@@ -1,13 +1,13 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Camera, Eye, Lightbulb, LockKeyhole, MonitorUp, Pause, Play, ShieldCheck, Sparkles, Sun, UserRound } from 'lucide-react';
+import { Camera, Eye, Lightbulb, LockKeyhole, MonitorUp, Pause, Play, ShieldCheck, Sparkles, Sun, UserRound, Wind, SlidersHorizontal, Thermometer } from 'lucide-react';
 import { FilesetResolver, PoseLandmarker, type NormalizedLandmark } from '@mediapipe/tasks-vision';
 import { useWorkspace } from '../context/WorkspaceContext';
 import { extractVisionFeatures, lightingScore } from '../vision/features';
 import { estimateFatigue, estimatePosture } from '../vision/heuristic';
-import { predictPosture, type PostureLabel } from '../vision/inference';
 
 type CameraStatus = 'idle' | 'starting' | 'live' | 'denied' | 'unsupported';
 type ModelStatus = 'loading' | 'ready' | 'unavailable';
+const score = (value: number) => Math.max(0, Math.min(100, Math.round(value)));
 const POSE_MODEL = 'https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_lite/float16/1/pose_landmarker_lite.task';
 const WASM_PATH = 'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.35/wasm';
 
@@ -24,7 +24,7 @@ const drawPose = (canvas: HTMLCanvasElement, landmarks: NormalizedLandmark[][], 
 };
 
 export const VisionView: React.FC = () => {
-  const { environment, setDeskLamp, setScreenWarmth, setCurrentView } = useWorkspace();
+  const { environment, setDeskLamp, setScreenWarmth, setCurrentView, adaptiveEnvironment, applyAdaptiveSignals } = useWorkspace();
   const video = useRef<HTMLVideoElement>(null);
   const canvas = useRef<HTMLCanvasElement>(null);
   const stream = useRef<MediaStream | null>(null);
@@ -40,7 +40,7 @@ export const VisionView: React.FC = () => {
   const [modelStatus, setModelStatus] = useState<ModelStatus>('loading');
   const [lighting, setLighting] = useState(72);
   const [postureScore, setPostureScore] = useState<number | null>(null);
-  const [postureLabel, setPostureLabel] = useState<PostureLabel | null>(null);
+  const [postureLabel, setPostureLabel] = useState<string | null>(null);
   const [postureConfidence, setPostureConfidence] = useState<number | null>(null);
   const [fatigueScore, setFatigueScore] = useState<number | null>(null);
 
@@ -99,15 +99,23 @@ export const VisionView: React.FC = () => {
         smoothedLighting.current = smoothedLighting.current * 0.75 + lightingReading * 0.25;
         setLighting(Math.max(0, Math.min(100, Math.round(smoothedLighting.current))));
       }
-      if (!landmarker.current) return;
+      if (!landmarker.current) {
+        applyAdaptiveSignals({ lighting: score(smoothedLighting.current), posture: null, fatigue: null });
+        return;
+      }
       const result = landmarker.current.detectForVideo(video.current, performance.now());
       const pose = result.landmarks[0];
-      if (!pose) { setPostureScore(null); return; }
+      if (!pose) {
+        setPostureScore(null);
+        applyAdaptiveSignals({ lighting: score(smoothedLighting.current), posture: null, fatigue: null });
+        return;
+      }
       const features = extractVisionFeatures(pose, lastNose.current);
       if (!features || features.visibility < 0.45) {
         setPostureScore(null);
         setPostureLabel('not_visible');
         setPostureConfidence(Math.round((features?.visibility ?? 0) * 100));
+        applyAdaptiveSignals({ lighting: score(smoothedLighting.current), posture: null, fatigue: null });
         return;
       }
       if (calibrationSamples.current.length < 15) {
@@ -115,15 +123,13 @@ export const VisionView: React.FC = () => {
         postureBaseline.current = calibrationSamples.current.reduce((sum, value) => sum + value, 0) / calibrationSamples.current.length;
       }
       const postureReading = estimatePosture(features, postureBaseline.current);
-      const modelPrediction = predictPosture(features, postureBaseline.current);
-      const useFallback = modelPrediction.confidence < 55 || modelPrediction.label === 'not_visible';
-      const postureEstimate = useFallback ? postureReading.score : modelPrediction.score;
+      const postureEstimate = postureReading.score;
       smoothedPosture.current = smoothedPosture.current === null
         ? postureEstimate
         : smoothedPosture.current * 0.7 + postureEstimate * 0.3;
       setPostureScore(Math.round(smoothedPosture.current));
-      setPostureLabel(useFallback ? 'good_posture' : modelPrediction.label);
-      setPostureConfidence(useFallback ? postureReading.confidence : modelPrediction.confidence);
+      setPostureLabel(postureReading.score < 70 ? (features.torsoLean > 0.15 ? 'leaning' : 'slouching') : 'aligned');
+      setPostureConfidence(postureReading.confidence);
       const now = Date.now();
       lastNose.current = pose[0];
       const elapsedMinutes = sessionStarted.current ? (now - sessionStarted.current) / 60000 : 0;
@@ -131,11 +137,16 @@ export const VisionView: React.FC = () => {
       smoothedFatigue.current = smoothedFatigue.current === null
         ? fatigueReading
         : smoothedFatigue.current * 0.8 + fatigueReading * 0.2;
-      setFatigueScore(Math.round(smoothedFatigue.current));
+      setFatigueScore(score(smoothedFatigue.current));
+      applyAdaptiveSignals({
+        lighting: score(smoothedLighting.current),
+        posture: smoothedPosture.current === null ? null : score(smoothedPosture.current),
+        fatigue: smoothedFatigue.current === null ? null : score(smoothedFatigue.current)
+      });
       drawPose(canvas.current, result.landmarks, video.current.videoWidth || 640, video.current.videoHeight || 360);
     }, 700);
     return () => window.clearInterval(id);
-  }, [status]);
+  }, [status, applyAdaptiveSignals]);
 
   const running = status === 'live' || status === 'starting';
   const postureValue = postureScore ?? 0;
@@ -151,17 +162,16 @@ export const VisionView: React.FC = () => {
       <div><div className="flex items-center gap-2 text-[#44664A] text-xs font-semibold uppercase tracking-wider"><Sparkles className="w-3.5 h-3.5" /> Adaptive Vision</div><h1 className="text-2xl sm:text-3xl font-semibold tracking-tight mt-1">A gentler read of your workspace</h1><p className="text-sm text-[#73716B] mt-1 max-w-2xl">Optional, non-medical signals to help shape your environment. Estimates are not a health, posture, or attention assessment.</p></div>
       <div className="flex items-center gap-2 text-xs text-[#44664A] bg-[#C8E6C9]/40 border border-[#C8E6C9] rounded-full px-3 py-2"><LockKeyhole className="w-3.5 h-3.5" /> Camera stays in this browser</div>
     </header>
-    <div className="rounded-xl border border-[#E7D7B5] bg-[#FFF8E8] px-4 py-3 text-xs text-[#6D572B]">
-      <b>Expo demo model:</b> posture labels are generated by a synthetic-data prototype (`synthetic-posture-v1`), not a clinically validated system. Confidence is an on-device estimate.
-    </div>
     <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
       <section className="lg:col-span-7 bg-white rounded-2xl border border-[#EAE7DF] shadow-xs overflow-hidden">
         <div className="aspect-video bg-[#242426] relative"><video ref={video} muted playsInline className={`w-full h-full object-cover ${status === 'live' ? 'block' : 'hidden'}`} /><canvas ref={canvas} className="absolute inset-0 w-full h-full pointer-events-none" />{status !== 'live' && <div className="absolute inset-0 flex flex-col items-center justify-center text-center text-white/80 p-6"><Camera className="w-10 h-10 mb-3 text-[#C8E6C9]" /><p className="text-sm font-medium">{status === 'denied' ? 'Camera permission was not granted' : status === 'unsupported' ? 'This browser does not support camera access' : 'Camera is off by default'}</p><p className="text-xs text-white/55 mt-1">No frames are uploaded or recorded.</p></div>}{status === 'live' && <span className="absolute top-3 left-3 bg-black/55 text-white text-[11px] rounded-full px-2.5 py-1">● Live, on-device</span>}</div>
         <div className="p-5 flex flex-wrap items-center justify-between gap-3"><div className="text-xs text-[#73716B]"><b className="text-[#242426]">Status:</b> {status === 'live' ? modelStatus === 'ready' ? 'Analyzing locally' : 'Camera live · pose model unavailable' : status === 'starting' ? 'Requesting permission…' : status === 'denied' ? 'Permission denied · lighting still available' : status === 'unsupported' ? 'Unavailable · lighting still available' : 'Ready when you are'}</div><button onClick={running ? stop : start} disabled={status === 'starting'} className="inline-flex items-center gap-2 rounded-full bg-[#44664A] text-white px-4 py-2 text-xs font-semibold disabled:opacity-60">{running ? <><Pause className="w-3.5 h-3.5" /> Stop camera</> : <><Play className="w-3.5 h-3.5 fill-current" /> Start camera</>}</button></div>
       </section>
-      <section className="lg:col-span-5 space-y-4"><div className="bg-white rounded-2xl border border-[#EAE7DF] p-5"><div className="flex justify-between mb-4"><h2 className="font-semibold">Workspace signals</h2><span className="text-[10px] uppercase text-[#73716B]">On-device estimates</span></div><Signal icon={<Sun className="w-4 h-4" />} label="Lighting" value={lighting} /><Signal icon={<UserRound className="w-4 h-4" />} label="Posture alignment" value={postureValue} muted={postureScore === null} /><div className="flex justify-between text-[11px] text-[#73716B] -mt-2 mb-4"><span>Model label: {postureLabel?.replace('_', ' ') || '—'}</span><span>{postureConfidence === null ? '—' : `${postureConfidence}% confidence`}</span></div><Signal icon={<Eye className="w-4 h-4" />} label="Fatigue estimate" value={fatigueValue} muted={fatigueScore === null} /><p className="text-[11px] text-[#8F8D86] mt-4">Pose landmarks are processed locally and immediately discarded. Fatigue uses stillness, head movement, and session elapsed time as non-medical proxies.</p></div><div className="bg-[#F7F3EB] rounded-2xl border border-[#EAE7DF] p-5 space-y-3"><h2 className="font-semibold text-sm">How it works</h2><div className="flex items-start gap-3 text-xs text-[#424841]"><MonitorUp className="w-4 h-4 text-[#44664A] mt-0.5" />Synthetic posture prototypes classify normalized shoulder, head, and torso features.</div><div className="flex items-start gap-3 text-xs text-[#424841]"><Eye className="w-4 h-4 text-[#44664A] mt-0.5" />Movement patterns and session duration inform the fatigue signal. It is not medical advice.</div></div></section>
+      <section className="lg:col-span-5 space-y-4"><div className="bg-white rounded-2xl border border-[#EAE7DF] p-5"><div className="flex justify-between mb-4"><h2 className="font-semibold">Workspace signals</h2><span className="text-[10px] uppercase text-[#73716B]">On-device estimates</span></div><Signal icon={<Sun className="w-4 h-4" />} label="Lighting" value={lighting} /><Signal icon={<UserRound className="w-4 h-4" />} label="Posture alignment" value={postureValue} muted={postureScore === null} /><Signal icon={<Eye className="w-4 h-4" />} label="Fatigue estimate" value={fatigueValue} muted={fatigueScore === null} /><p className="text-[11px] text-[#8F8D86] mt-4">Pose landmarks are processed locally and immediately discarded. Fatigue uses stillness, head movement, and session elapsed time as non-medical proxies.</p></div><div className="bg-[#F7F3EB] rounded-2xl border border-[#EAE7DF] p-5 space-y-3"><h2 className="font-semibold text-sm">How it works</h2><div className="flex items-start gap-3 text-xs text-[#424841]"><MonitorUp className="w-4 h-4 text-[#44664A] mt-0.5" />Shoulder tilt, head alignment, and torso geometry produce the posture estimate.</div><div className="flex items-start gap-3 text-xs text-[#424841]"><Eye className="w-4 h-4 text-[#44664A] mt-0.5" />Movement patterns and session duration inform the fatigue signal. It is not medical advice.</div></div><div className="bg-[#17352A] rounded-2xl p-5 text-white"><div className="flex items-center justify-between gap-3"><h2 className="font-semibold text-sm">Simulated environment</h2><span className="text-[10px] uppercase tracking-wider text-[#C8E6C9]">{adaptiveEnvironment.active ? 'Adapting gradually' : 'Waiting for camera'}</span></div><p className="text-xs text-white/70 mt-2">{adaptiveEnvironment.summary}</p><div className="grid grid-cols-2 gap-2 mt-4 text-center"><Device icon={<SlidersHorizontal className="w-4 h-4 mx-auto text-[#C8E6C9]" />} label="Desk controller" value={`${adaptiveEnvironment.deskController.level}%`} status={adaptiveEnvironment.deskController.status} /><Device icon={<Sun className="w-4 h-4 mx-auto text-[#C8E6C9]" />} label="Room lighting" value={`${adaptiveEnvironment.roomLighting.brightness}%`} status={`${adaptiveEnvironment.roomLighting.colorTemp}K · ${adaptiveEnvironment.roomLighting.status}`} /><Device icon={<Thermometer className="w-4 h-4 mx-auto text-[#C8E6C9]" />} label="Air conditioning" value={`${adaptiveEnvironment.airConditioning.temperature}°C`} status={`Fan ${adaptiveEnvironment.airConditioning.fan}% · ${adaptiveEnvironment.airConditioning.status}`} /><Device icon={<Wind className="w-4 h-4 mx-auto text-[#C8E6C9]" />} label="Desk audio" value={`${environment.focusAudio.volume}%`} status="Smooth volume response" /></div><div className="grid grid-cols-2 gap-2 mt-2 text-center"><Device icon={<MonitorUp className="w-4 h-4 mx-auto text-[#C8E6C9]" />} label="Screen warmth" value={`${environment.screenWarmth.currentTempK}K`} status="Vision-adjusted" /><Device icon={<Eye className="w-4 h-4 mx-auto text-[#C8E6C9]" />} label="Break pacing" value={fatigueValue > 65 ? 'Sooner' : 'Steady'} status="Based on fatigue trend" /></div></div></section>
+      <section className="lg:col-span-5 space-y-4"><div className="bg-white rounded-2xl border border-[#EAE7DF] p-5"><div className="flex justify-between mb-4"><h2 className="font-semibold">Workspace signals</h2><span className="text-[10px] uppercase text-[#73716B]">On-device estimates</span></div><Signal icon={<Sun className="w-4 h-4" />} label="Lighting" value={lighting} /><Signal icon={<UserRound className="w-4 h-4" />} label="Posture alignment" value={postureValue} muted={postureScore === null} /><div className="flex justify-between text-[11px] text-[#73716B] -mt-2 mb-4"><span>Reading: {postureLabel?.replace('_', ' ') || '—'}</span><span>{postureConfidence === null ? '—' : `${postureConfidence}% confidence`}</span></div><Signal icon={<Eye className="w-4 h-4" />} label="Fatigue estimate" value={fatigueValue} muted={fatigueScore === null} /><p className="text-[11px] text-[#8F8D86] mt-4">Pose landmarks are processed locally and immediately discarded. Fatigue uses stillness, head movement, and session elapsed time as non-medical proxies.</p></div><div className="bg-[#F7F3EB] rounded-2xl border border-[#EAE7DF] p-5 space-y-3"><h2 className="font-semibold text-sm">How it works</h2><div className="flex items-start gap-3 text-xs text-[#424841]"><MonitorUp className="w-4 h-4 text-[#44664A] mt-0.5" />Shoulder tilt, head alignment, and torso geometry produce the posture estimate.</div><div className="flex items-start gap-3 text-xs text-[#424841]"><Eye className="w-4 h-4 text-[#44664A] mt-0.5" />Movement patterns and session duration inform the fatigue signal. It is not medical advice.</div></div><div className="bg-[#17352A] rounded-2xl p-5 text-white"><div className="flex items-center justify-between gap-3"><h2 className="font-semibold text-sm">Simulated environment</h2><span className="text-[10px] uppercase tracking-wider text-[#C8E6C9]">{adaptiveEnvironment.active ? 'Adapting gradually' : 'Waiting for camera'}</span></div><p className="text-xs text-white/70 mt-2">{adaptiveEnvironment.summary}</p><div className="grid grid-cols-2 gap-2 mt-4 text-center"><Device icon={<SlidersHorizontal className="w-4 h-4 mx-auto text-[#C8E6C9]" />} label="Desk controller" value={`${adaptiveEnvironment.deskController.level}%`} status={adaptiveEnvironment.deskController.status} /><Device icon={<Sun className="w-4 h-4 mx-auto text-[#C8E6C9]" />} label="Room lighting" value={`${adaptiveEnvironment.roomLighting.brightness}%`} status={`${adaptiveEnvironment.roomLighting.colorTemp}K · ${adaptiveEnvironment.roomLighting.status}`} /><Device icon={<Thermometer className="w-4 h-4 mx-auto text-[#C8E6C9]" />} label="Air conditioning" value={`${adaptiveEnvironment.airConditioning.temperature}°C`} status={`Fan ${adaptiveEnvironment.airConditioning.fan}% · ${adaptiveEnvironment.airConditioning.status}`} /><Device icon={<Wind className="w-4 h-4 mx-auto text-[#C8E6C9]" />} label="Desk audio" value={`${environment.focusAudio.volume}%`} status="Smooth volume response" /></div><div className="grid grid-cols-2 gap-2 mt-2 text-center"><Device icon={<MonitorUp className="w-4 h-4 mx-auto text-[#C8E6C9]" />} label="Screen warmth" value={`${environment.screenWarmth.currentTempK}K`} status="Vision-adjusted" /><Device icon={<Eye className="w-4 h-4 mx-auto text-[#C8E6C9]" />} label="Break pacing" value={fatigueValue > 65 ? 'Sooner' : 'Steady'} status="Based on fatigue trend" /></div></div></section>
     </div>
     <section className="bg-white rounded-2xl border border-[#EAE7DF] p-5 sm:p-6"><div className="flex items-center gap-2 mb-4"><Lightbulb className="w-4 h-4 text-[#865221]" /><h2 className="font-semibold">Adaptive suggestions</h2></div><div className="grid md:grid-cols-3 gap-3">{suggestions.length ? suggestions.map((s) => <div key={s} className="rounded-xl bg-[#F7F3EB] p-3 text-xs text-[#424841]">{s}</div>) : <div className="rounded-xl bg-[#C8E6C9]/40 p-3 text-xs text-[#1C331F]">Your workspace looks ready. Keep the rhythm gentle and take breaks.</div>}</div><div className="flex flex-wrap gap-2 mt-5"><button onClick={() => setDeskLamp({ enabled: true, brightness: Math.max(environment.deskLamp.brightness, 70) })} className="text-xs rounded-full border border-[#EAE7DF] px-3 py-2">Apply brighter lamp</button><button onClick={() => setScreenWarmth({ autoTrueTone: true })} className="text-xs rounded-full border border-[#EAE7DF] px-3 py-2">Use gentle screen warmth</button><button onClick={() => setCurrentView('desk')} className="text-xs rounded-full border border-[#EAE7DF] px-3 py-2">Return to desk</button></div><div className="flex items-center gap-2 text-[11px] text-[#8F8D86] mt-5"><ShieldCheck className="w-3.5 h-3.5 text-[#44664A]" /> No image, video, biometric template, or frame-derived data leaves your browser.</div></section>
   </div>;
 };
 const Signal = ({ icon, label, value, muted = false }: { icon: React.ReactNode; label: string; value: number; muted?: boolean }) => <div className="mb-4"><div className="flex justify-between text-xs mb-1.5"><span className="flex items-center gap-2">{icon}{label}</span><b>{muted ? '—' : `${value}/100`}</b></div><div className="h-2 rounded-full bg-[#EAE7DF] overflow-hidden"><div className="h-full rounded-full bg-[#769A7A] transition-all" style={{ width: `${muted ? 0 : value}%` }} /></div></div>;
+const Device = ({ icon, label, value, status }: { icon: React.ReactNode; label: string; value: string; status: string }) => <div className="rounded-xl bg-white/10 p-2 text-center"><div>{icon}</div><b className="block text-sm mt-1">{value}</b><span className="block text-[10px] text-white/80">{label}</span><span className="block text-[9px] text-white/50 mt-0.5">{status}</span></div>;
