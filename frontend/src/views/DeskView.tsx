@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { useWorkspace } from '../context/WorkspaceContext';
 import {
   Focus,
@@ -28,6 +28,12 @@ export const DeskView: React.FC = () => {
     overallFocusProgress,
     isFocusActive
   } = useWorkspace();
+  const [currentTime, setCurrentTime] = useState(() => new Date());
+
+  useEffect(() => {
+    const timer = window.setInterval(() => setCurrentTime(new Date()), 1000);
+    return () => window.clearInterval(timer);
+  }, []);
 
   const primaryTasks = tasks.filter((t) => t.project === 'Edge Mesh Protocol' || t.id === 'task-1' || t.id === 'task-2' || t.id === 'task-3');
 
@@ -37,8 +43,7 @@ export const DeskView: React.FC = () => {
       <div className="flex flex-col md:flex-row md:items-end justify-between gap-4 pb-2 border-b border-[#EAE7DF]/60">
         <div className="space-y-1">
           <div className="flex items-center gap-2 text-[#865221] text-xs font-semibold uppercase tracking-wider">
-            <span className="w-1.5 h-1.5 rounded-full bg-[#865221]" />
-            <span>Workspace Sanctuary • Kyoto Studio</span>
+            <span>Kyoto Desk</span>
           </div>
           <h1 className="text-2xl sm:text-3xl font-semibold text-[#242426] tracking-tight">
             Today’s Direction
@@ -54,7 +59,9 @@ export const DeskView: React.FC = () => {
             <span className="text-[11px] uppercase tracking-wider font-semibold text-[#73716B]">
               Natural Cycle
             </span>
-            <span className="text-sm font-semibold text-[#242426]">Late Afternoon • 16:42</span>
+            <span className="text-sm font-semibold text-[#242426]">
+              {currentTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+            </span>
           </div>
           <div className="w-8 h-8 rounded-full bg-[#FFDCC2] flex items-center justify-center text-[#2E1500] shadow-xs">
             <Sun className="w-4 h-4 text-[#865221]" />
