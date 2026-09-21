@@ -94,6 +94,19 @@ unavailable rather than guessing. An external provider is optional (`AI_API_KEY`
 
 `GET /health` returns service availability and does not require authentication.
 
+## Vision analytics
+
+Camera frames and pose landmarks are never sent to the API. The browser may
+optionally submit an aggregate session summary after an analysis session:
+
+| Method | Endpoint | Request |
+| --- | --- | --- |
+| POST | `/api/vision/sessions` | `{ "durationSeconds": 300, "sampleCount": 400, "averageLighting": 72, "averagePosture": 84, "lowConfidenceSeconds": 5, "breakSuggested": false, "modelVersion": "heuristic-v1" }` |
+| GET | `/api/vision/analytics?days=7` | - |
+
+Vision summaries are scoped to the authenticated user and contain no frames,
+images, landmarks, biometric templates, or raw feature sequences.
+
 ## Ownership and validation
 
 Every project and task is scoped to the authenticated user. A resource owned by
